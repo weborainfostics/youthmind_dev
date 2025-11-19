@@ -82,7 +82,7 @@ export const MOODS = [
     { score: 2, label: "Very Happy", emoji: "✨", color: "#8b5cf6" },
 ];
 
-const COUNSELORS = [
+export const COUNSELORS = [
     { name: "Ms. Dhriti", degree: "M.Sc Clinical Psychology", experience: "Expressive Art Therapy (UNESCO) 2+ Years", whatsapp: "918287502696" },
     { name: "Ms. Saravanan A", degree: "PsychoTherapist M.Sc Councelling- University of Madras", experience: "1+ Years", whatsapp: "919445733431" },
     { name: "Ms. Aanya Singhania", degree: "M.Sc Councelling Psychology-IIPR BANGALORE", experience: "1+ Years", whatsapp: "919330259556" },
@@ -214,3 +214,4 @@ export const GREETINGS = (name) => {
             { value: 'Custom Days', text: 'Custom Days' },
         ],
     };
+
