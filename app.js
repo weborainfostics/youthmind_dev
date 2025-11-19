@@ -3084,8 +3084,9 @@ async function handleChatSend() {
             parts: [{ text: m.text }]
         }));
 
-        const reply = await generateReply({ text, moodScore: todayMood?.score ?? 0, name: profile.displayName, chatHistory: recentHistory });
+     const reply = await generateReply({ text, moodScore: todayMood?.score ?? 0, name: profile.displayName, chatHistory: recentHistory });
 
+        // Add bot message to Firestore ONCE
         await addDoc(collection(db, chatPath), { text: reply.text, sender: "bot", sentAt: serverTimestamp() });
         
         // --- NEW: Auto TTS ---
@@ -3094,10 +3095,7 @@ async function handleChatSend() {
         }
         // ---------------------
 
-        checkAndNotifyBadgeUpdate();
-        await addDoc(collection(db, chatPath), { text: reply.text, sender: "bot", sentAt: serverTimestamp() });
         checkAndNotifyBadgeUpdate(); // Check for new badges after sending a message
-
     } catch (error) {
         console.error("Failed to send message:", error);
         chatMessages = chatMessages.filter(m => m.id !== tempUserMessageId);
@@ -4088,7 +4086,7 @@ window.addEventListener('resize', () => {
 
 function main() {
     // Load TTS preference
-    isAutoTTS = localStorage.getItem('youthmind_auto_tts') === 'true';
+    isAutoTTS = "false";
     // Initialize theme
     const savedTheme = localStorage.getItem('YouthMind-theme');
     isDarkMode = savedTheme === 'dark';
