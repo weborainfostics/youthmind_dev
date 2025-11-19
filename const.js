@@ -82,10 +82,14 @@ export const MOODS = [
     { score: 2, label: "Very Happy", emoji: "✨", color: "#8b5cf6" },
 ];
 
-export const COUNSELORS = [
+const COUNSELORS = [
     { name: "Ms. Dhriti", degree: "M.Sc Clinical Psychology", experience: "Expressive Art Therapy (UNESCO) 2+ Years", whatsapp: "918287502696" },
     { name: "Ms. Saravanan A", degree: "PsychoTherapist M.Sc Councelling- University of Madras", experience: "1+ Years", whatsapp: "919445733431" },
     { name: "Ms. Aanya Singhania", degree: "M.Sc Councelling Psychology-IIPR BANGALORE", experience: "1+ Years", whatsapp: "919330259556" },
+ { name: "Mr. Ashish Tomar", degree: "Masters in Psychology", experience: "6 Months", whatsapp: "919548890016" },
+ { name: "Yet to come", degree: "--", experience: "--", whatsapp: "91--" },
+  { name: "Yet to come", degree: "--", experience: "--", whatsapp: "91--" },
+
 ];
 
 // ===== VIDEO GENRE LINKS SECTION =====
