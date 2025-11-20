@@ -4243,7 +4243,7 @@ window.addEventListener('resize', () => {
 
 function main() {
     // Load TTS preference
-    isAutoTTS = "false";
+    isAutoTTS = false;
     // Initialize theme
     const savedTheme = localStorage.getItem('YouthMind-theme');
     isDarkMode = savedTheme === 'dark';
@@ -4702,3 +4702,4 @@ main();
 
 // Call smart popups *after* main() has run and data (like todayDayRating) is fetched
 // We'll call this at the end of onAuthStateChanged instead
+
