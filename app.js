@@ -971,34 +971,51 @@ function renderMoodPicker() {
 
     // Check if a mood is already selected today
     if (todayMood && todayMood.mainMood) {
-        const mood = cons.FEELING_WHEEL[todayMood.mainMood];
-        const subMood = todayMood.subMood;
+        // 1. Try to get mood from Wheel
+        let mood = cons.FEELING_WHEEL[todayMood.mainMood];
+        
+        // 2. If not in Wheel, try to find it in the main MOODS list (Fallback for AI/Flat moods)
+        if (!mood) {
+            const flatMood = cons.MOODS.find(m => m.label === todayMood.mainMood);
+            if (flatMood) {
+                mood = {
+                    emoji: flatMood.emoji,
+                    color: flatMood.color
+                };
+            } else {
+                // 3. Absolute fallback if data is corrupted or unknown
+                mood = { emoji: '❓', color: '#9ca3af' };
+            }
+        }
+
+        const subMood = todayMood.subMood || ''; // Handle missing subMood
+        
         return `
             <div id="mood-picker" class="bg-white/80 dark:bg-gray-900/70 backdrop-blur-lg rounded-3xl shadow-xl p-6 sm:p-8 slide-up w-full overflow-hidden dark:border dark:border-gray-800 text-center">
                 <h3 class="text-xl font-bold text-gray-800 dark:text-gray-200 mb-2">How you're feeling today:</h3>
                 <div class="text-6xl my-4">${mood.emoji}</div>
                 <h2 class="text-3xl font-bold" style="color: ${mood.color}">${todayMood.mainMood}</h2>
-                <p class="text-lg text-gray-600 dark:text-gray-400">(${subMood})</p>
+                <p class="text-lg text-gray-600 dark:text-gray-400">${subMood ? `(${subMood})` : ''}</p>
                 <button id="edit-mood-btn" class="mt-6 w-full max-w-xs mx-auto px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-semibold rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">Change Mood</button>
             </div>
         `;
     }
 
-    // Render the grid if no mood is selected
+    // Render the grid if no mood is selected (Keep existing grid logic)
     return `
         <div id="mood-picker" class="bg-white/80 dark:bg-gray-900/70 backdrop-blur-lg rounded-3xl shadow-xl p-6 sm:p-8 slide-up w-full overflow-hidden dark:border dark:border-gray-800 relative">
             <h3 class="text-xl font-bold text-gray-800 dark:text-gray-200 text-center">How are you feeling today?</h3>
             
             <div class="mood-grid-container">
                 ${mainMoods.map(moodName => {
-        const mood = cons.FEELING_WHEEL[moodName];
-        return `
+                    const mood = cons.FEELING_WHEEL[moodName];
+                    return `
                         <button class="mood-grid-button" data-mood="${moodName}" style="--slice-bg: ${mood.color}; --slice-text: #ffffff;">
                             <div class="emoji">${mood.emoji}</div>
                             <div class="label">${moodName}</div>
                         </button>
                     `;
-    }).join('')}
+                }).join('')}
             </div>
 
             <div id="sub-mood-pop-up" class="sub-mood-wheel">
@@ -2647,11 +2664,29 @@ async function refreshSleepData(uid) {
     });
 }
 async function handleMoodPick(mainMood, subMood) {
-    const moodInfo = cons.FEELING_WHEEL[mainMood];
-    if (!user || !moodInfo) return;
+    // 1. Try to get mood info from the Wheel first (for manual clicks)
+    let moodInfo = cons.FEELING_WHEEL[mainMood];
 
-    // Find the corresponding base label (e.g., "Very Happy") from the original MOODS array
-    // This is crucial for keeping the music player and themes working
+    // 2. If not in wheel (e.g., AI detected "Neutral" or "Very Happy"), look in the main MOODS list
+    if (!moodInfo) {
+        const flatMood = cons.MOODS.find(m => m.label === mainMood);
+        if (flatMood) {
+            moodInfo = {
+                score: flatMood.score,
+                emoji: flatMood.emoji,
+                color: flatMood.color,
+                // No sub-moods for these, so we just proceed
+            };
+        }
+    }
+
+    // If still invalid, stop
+    if (!user || !moodInfo) {
+        console.error("Invalid mood selected or detected:", mainMood);
+        return;
+    }
+
+    // 3. Find the corresponding base label for the theme/music system
     const baseMood = cons.MOODS.find(m => m.score === moodInfo.score);
     if (!baseMood) {
         console.error("Could not find matching base mood for score:", moodInfo.score);
@@ -2665,29 +2700,37 @@ async function handleMoodPick(mainMood, subMood) {
     const moodData = {
         score: moodInfo.score,
         label: baseMood.label, // e.g., "Very Happy"
-        mainMood: mainMood,    // e.g., "Happy"
-        subMood: subMood,      // e.g., "Joyful"
+        mainMood: mainMood,    // e.g., "Happy" or "Very Happy"
+        subMood: subMood,      // e.g., "Joyful" or "Chat Detected"
         emoji: moodInfo.emoji, // e.g., "✨"
         createdAt: serverTimestamp()
     };
 
     if (!todayMood) todayMood = { notes: [] };
-    // Update local todayMood object
+    
+    // Preserve existing notes if we are just updating the mood
+    const existingNotes = todayMood.notes || [];
     Object.assign(todayMood, moodData);
+    todayMood.notes = existingNotes;
 
     // Save to Firestore
-    await setDoc(doc(db, moodPath, id), moodData, { merge: true });
-    await setDoc(doc(db, userPath), { lastCheckIn: id }, { merge: true });
+    try {
+        await setDoc(doc(db, moodPath, id), moodData, { merge: true });
+        await setDoc(doc(db, userPath), { lastCheckIn: id }, { merge: true });
 
-    // Update theme
-    applyMoodTheme(baseMood.label);
+        // Update theme
+        applyMoodTheme(baseMood.label);
 
-    // Re-render the whole app content
-    await refreshMoodData(user.uid);
-    renderAppContent(false);
-    drawInteractiveChart(chartData);
-    updateMusicCategoryFromMood();
-    checkAndNotifyBadgeUpdate();
+        // Re-render the whole app content to show new state
+        await refreshMoodData(user.uid);
+        renderAppContent(false);
+        drawInteractiveChart(chartData);
+        updateMusicCategoryFromMood();
+        checkAndNotifyBadgeUpdate();
+        
+    } catch (error) {
+        console.error("Error saving mood:", error);
+    }
 }
 async function handleAddNote() {
     const noteInput = document.getElementById('note-input');
@@ -4702,4 +4745,5 @@ main();
 
 // Call smart popups *after* main() has run and data (like todayDayRating) is fetched
 // We'll call this at the end of onAuthStateChanged instead
+
 
