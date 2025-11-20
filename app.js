@@ -68,6 +68,10 @@ let todayMood = null;
 let calendarMap = {};
 let chartData = [];
 let chatMessages = [];
+// ... existing variables ...
+let distressTriggerCount = 0; // <-- ADD THIS
+let fitAccessToken = null;   // <-- ADD THIS
+let todaySteps = 0;          // <-- ADD THIS
 let chatUnsubscribe = null;
 let todaySleep = null;
 let sleepCalendarMap = {};
@@ -186,50 +190,36 @@ function prepareTextForSpeech(text) {
 // ===== Text-to-Speech Functions =====
 function speakText(text) {
     if (synth.speaking) {
-        synth.cancel(); // Stop previous speech immediately
+        synth.cancel(); // Stop previous speech
     }
     if (!text) return;
 
-    // Clean the text first
     const textToRead = prepareTextForSpeech(text);
     const utterance = new SpeechSynthesisUtterance(textToRead);
     
-    // --- Voice Selection Logic (Targeting "Smooth/Sexy") ---
-    // Priority 1: Google US English (Very smooth, high quality)
-    // Priority 2: Microsoft Zira (Good Windows voice)
-    // Priority 3: Samantha (Good Mac voice)
-    // Priority 4: Google English India (Good Indian accent)
+    // --- Improved Voice Selection ---
+    // 1. Microsoft Voices (High quality on Windows)
+    // 2. Google US English (High quality on Chrome/Android)
+    // 3. Any "English (United States)"
+    // 4. Any English
     
     const preferredVoice = 
-        voices.find(v => v.name === 'Google US English') || 
-        voices.find(v => v.name.includes('Zira')) || 
-        voices.find(v => v.name.includes('Samantha')) ||
-        voices.find(v => v.lang === 'en-IN' && v.name.includes('Google')) ||
+        voices.find(v => v.name.includes('Microsoft Zira')) || 
+        voices.find(v => v.name.includes('Google US English')) || 
+        voices.find(v => v.lang === 'en-US' && v.name.includes('Microsoft')) ||
+        voices.find(v => v.lang === 'en-US') ||
         voices.find(v => v.lang.startsWith('en'));
     
     if (preferredVoice) {
         utterance.voice = preferredVoice;
     }
 
-    // --- Tuning for "Sexy/Calm" Vibe ---
-    utterance.pitch = 0.9; // Slightly lower pitch is more soothing
-    utterance.rate = 0.95; // Slightly slower is clearer and more relaxed
+    // Tuning for a calmer, more natural sound
+    utterance.pitch = 0.95; 
+    utterance.rate = 0.9; 
     utterance.volume = 1;
 
-    // Animation toggles (Keep existing logic)
-    utterance.onstart = () => {
-        const btns = document.querySelectorAll('.tts-btn');
-        btns.forEach(b => {
-            // Check against original text data attribute
-            if (b.dataset.text && b.dataset.text.includes(text.substring(0, 20))) {
-                b.classList.add('speaking');
-            }
-        });
-    };
-    utterance.onend = () => {
-        document.querySelectorAll('.tts-btn').forEach(b => b.classList.remove('speaking'));
-    };
-
+    // ... (rest of animation logic) ...
     synth.speak(utterance);
 }
 function toggleAutoTTS() {
@@ -241,183 +231,105 @@ function toggleAutoTTS() {
     }
     localStorage.setItem('youthmind_auto_tts', isAutoTTS);
 }
+// ===== Google Fit Integration =====
+// ===== Google Fit Integration =====
+async function connectGoogleFit() {
+    // We need to re-authenticate or link to get the new scopes
+    const provider = new GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/fitness.activity.read');
+    provider.addScope('https://www.googleapis.com/auth/fitness.sleep.read');
+
+    try {
+        // If user is already signed in with Google, we can try re-authenticating
+        // Or asking for permission via a popup that links the credential
+        const result = await signInWithPopup(auth, provider);
+        
+        // This gives you a Google Access Token. You can use it to access the Google API.
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        fitAccessToken = credential.accessToken;
+        
+        showNotification("Google Fit Connected! Syncing data...", false, true);
+        await fetchFitData();
+    } catch (error) {
+        console.error("Google Fit Error:", error);
+        showNotification("Failed to connect Google Fit.", true);
+    }
+}
+async function fetchFitData() {
+    if (!fitAccessToken) return;
+
+    const endTime = new Date().getTime();
+    const startTime = new Date().setHours(0,0,0,0); // Start of today
+
+    // 1. Fetch Steps
+    try {
+        const response = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${fitAccessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                "aggregateBy": [{ "dataTypeName": "com.google.step_count.delta" }],
+                "bucketByTime": { "durationMillis": 86400000 }, // 1 day
+                "startTimeMillis": startTime,
+                "endTimeMillis": endTime
+            })
+        });
+        const data = await response.json();
+        const steps = data.bucket?.[0]?.dataset?.[0]?.point?.[0]?.value?.[0]?.intVal || 0;
+        todaySteps = steps;
+        console.log("Fetched Steps:", todaySteps);
+        
+        // Update UI (if you want to show steps somewhere immediately)
+        // You could add a small badge to the Profile or Health section
+        
+    } catch (e) { console.error("Error fetching steps:", e); }
+
+    // 2. Fetch Sleep (Simple implementation)
+    // Note: Sleep sessions are complex in Fit API, this is a basic session read
+    try {
+        const response = await fetch(`https://www.googleapis.com/fitness/v1/users/me/sessions?startTime=${new Date().setDate(new Date().getDate()-1).toString()}&endTime=${endTime}&activityType=72`, {
+             headers: { 'Authorization': `Bearer ${fitAccessToken}` }
+        });
+        const data = await response.json();
+        // If data found, you could auto-populate the Sleep Tracker
+        // This part requires complex parsing of session timestamps
+    } catch (e) { console.error("Error fetching sleep:", e); }
+}
 // ===== 3) Gemini API Logic =====
+// ===== 3) Gemini API Logic (Enhanced) =====
 async function generateReply({ text, moodScore, name, chatHistory }) {
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${gem.GEMINI_API_KEY}`;    if (!gem.GEMINI_API_KEY) {
-        return { text: "The chatbot is not configured. Please add a Gemini API key to the code.", crisis: false };
+    const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${gem.GEMINI_API_KEY}`;
+    
+    if (!gem.GEMINI_API_KEY) {
+        return { text: "API Key missing.", crisis: false };
     }
 
-    // --- New Mood & Sleep Description Logic ---
-    const moodLabel = todayMood?.mainMood;
-    const subMoodLabel = todayMood?.subMood;
-    let moodDescription = "feeling neutral";
-    if (moodLabel && subMoodLabel) {
-        moodDescription = `feeling ${moodLabel} (specifically ${subMoodLabel})`;
-    } else if (moodLabel) {
-        moodDescription = `feeling ${moodLabel}`;
+    const systemPrompt = `You are YouthMind, a smart, empathetic mental health companion.
+    
+    CRITICAL INSTRUCTION: You must output ONLY valid JSON. Do not output plain text.
+    
+    Analyze the user's message and return a JSON object with this structure:
+    {
+      "reply": "Your conversational response here (keep it warm, Hinglish allowed, supportive)",
+      "detected_mood": "One of ['Very Sad', 'Sad', 'Neutral', 'Happy', 'Very Happy'] based on the user's tone",
+      "distress_level": Integer 0 to 10 (0 = calm, 10 = immediate self-harm/suicide risk),
+      "is_distress": Boolean (true if distress_level > 6)
     }
 
-    let sleepDescription = "We don't know how they slept last night.";
-    if (todaySleep) {
-        sleepDescription = `For context, they slept ${todaySleep.hoursSlept} hours, woke up ${todaySleep.timesAwoke} times, and have a sleep score of ${todaySleep.score}.`;
-    }
-    // --- End New Logic ---
-
-   const systemPrompt = `You are YouthMind, a mental well-being companion for young adults in India.
-
-You are not a therapist and not a cheerleader.
-Your job is to listen deeply, validate emotions, gently help the user explore what’s going on, and offer small, realistic coping strategies—while keeping a warm, friendly, Desi best-friend vibe.
-
-The user’s name is ${name || "Friend"}.
-Today they are ${moodDescription}.
-${sleepDescription}
-
-
----
-
-Core Behavioral Rules
-
-1. Emotional Validation First
-
-Always begin by acknowledging what the user feels.
-Use language like:
-
-“It makes sense you’d feel that way.”
-
-“Yeh kaafi heavy lag raha hai.”
-
-“I can hear how tough this feels for you.”
-
-
-Never minimize emotions.
-Avoid: “Cheer up,” “Don’t be sad,” “No worries,” or any toxic positivity.
-
-
----
-
-2. Gentle Exploration
-
-Help the user understand what’s happening inside without interrogating.
-
-Ask soft, open-ended questions like:
-
-“Kab se aisa feel ho raha hai?”
-
-“Is situation ka kaunsa part sabse zyada hurt karta hai?”
-
-“What thoughts pop up for you when this happens?”
-
-
-Reflect their feelings:
-
-“So if I’m understanding right, you feel ___ when ___ happens. Did I get that?”
-
-
-
----
-
-3. Focus on Underlying Needs
-
-Try to identify needs beneath emotions—support, connection, space, rest, clarity.
-
-Use lines like:
-
-“Shayad tumhe is time zyada understanding ki need ho.”
-
-“Lagta hai pain ka ek part unheard feel karna bhi hai. Does that fit?”
-
-
-
----
-
-4. Coping Options, Not Commands
-
-Offer small, realistic, optional coping ideas:
-
-Grounding exercises
-
-Journaling prompts
-
-Gentle reframes
-
-Small physical actions (breathing, water, stretch)
-
-
-Always phrase as choices, not instructions.
-
-Examples:
-
-“Agar tum chaho toh hum ek chhota grounding exercise try kar sakte hain.”
-
-“Some people find it helpful to write down just one thought that’s bothering them.”
-
-
-
----
-
-5. Respect Their Pace
-
-Give control back to the user:
-
-“Do you want to go deeper into this, or should we focus on coping for right now?”
-
-“What feels safest to talk about?”
-
-
-
----
-
-6. Tone & Vibe
-
-Default vibe:
-Chatty, funny, warm, desi best-friend energy (YouthMind). Emojis allowed. Short paragraphs.
-
-If user talks in Hinglish, reply in Hinglish.
-If casual topic → short, lively replies.
-If emotionally heavy → longer (max 250–300 words), gentle, grounded response.
-
-
----
-
-7. Safety Rule
-
-If user hints at self-harm, suicidal thoughts, or extreme distress:
-
-Immediately pause humor
-
-Respond with calm, mature empathy
-
-Validate deeply
-
-Gently encourage reaching out to a trusted person or professional
-
-Never judge, shame, or give medical advice
-
-
-Example:
-
-“I’m really glad you shared this with me.
-I’m not a professional and I can’t keep you safe in an emergency, but you deserve real support.
-Can you reach out to someone you trust or a local helpline right now?”
-
-
----
-
-8. Output Structure
-
-A typical reply should follow this structure:
-
-1. Validate their feeling
-
-
-2. Reflect + gently explore with 1–2 questions
-
-
-3. Offer a small, optional coping step / ask what direction they prefer`;
-
-    const payload = {
+    Context: User is ${name}.
+    
+    Guidelines:
+    1. If distress_level > 6: Be calm, grounding, and suggest professional help in the 'reply'.
+    2. If distress_level < 4: Be your usual fun, chatty, Desi best-friend self.
+    3. Detect mood deeply. If they say "I won the match", mood is "Very Happy". If "I failed", mood is "Sad".
+    `;
+
+  const payload = {
         contents: [...chatHistory, { role: 'user', parts: [{ text }] }],
         systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: { responseMimeType: "application/json" } // <--- CRITICAL
     };
 
     try {
@@ -426,23 +338,24 @@ A typical reply should follow this structure:
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        if (!response.ok) {
-            const errorBody = await response.json();
-            throw new Error(`API Error: ${errorBody.error.message}`);
-        }
-        const result = await response.json();
-        const candidate = result.candidates?.[0];
-        const botText = candidate?.content?.parts?.[0]?.text || "I'm not sure how to respond to that.";
-        const crisisWords = ["suicide", "kill myself", "end it all", "self-harm", "cutting myself", "hopeless", "worthless", "no reason to live", "want to die", "better off dead", "end my life"];
-        const isCrisis = crisisWords.some(w => text.toLowerCase().includes(w));
+        
+        if (!response.ok) throw new Error("API Error");
+        
+     const result = await response.json();
+        const jsonText = result.candidates[0].content.parts[0].text;
+        const aiResponse = JSON.parse(jsonText); // <--- CRITICAL
 
         return {
-            text: isCrisis ? `Thank you for sharing that with me, ${name}. I'm hearing a lot of pain in your words, and I want you to know I'm here and listening. Your safety is the most important thing right now. If you're in immediate danger, please reach out to emergency services (like 112 in India) or a trusted adult. You're not alone in this. Sometimes just taking a moment to breathe can help. Can we try taking one slow, deep breath together? Inhale... and exhale.<b> check below you can talk to our counncellors, if feeling not good.` : botText,
-            crisis: isCrisis
+            text: aiResponse.reply,
+            mood: aiResponse.detected_mood, // This matches the system prompt structure
+            distressLevel: aiResponse.distress_level,
+            isCrisis: aiResponse.is_distress
         };
+
     } catch (error) {
-        console.error("Error calling Gemini API:", error);
-        return { text: "Sorry, I couldn't connect right now. Let's try again in a bit.", crisis: false };
+        console.error("AI Error:", error);
+        // Fallback for safety
+        return { text: "I'm having trouble connecting, but I'm here for you.", isCrisis: false };
     }
 }
 // ===== NEW SLEEP RENDER FUNCTIONS =====
@@ -1358,7 +1271,7 @@ function renderEveningCheckinBanner() {
     
     // Convert to minutes since midnight for easier comparison
     const currentTimeInMinutes = currentHour * 60 + currentMinutes;
-    const eveningStart = 18 * 60; // 6:00 PM = 1080 minutes
+    const eveningStart = 0 * 60; // 6:00 PM = 1080 minutes
     const eveningEnd = 23 * 60 + 59; // 11:59 PM = 1439 minutes
     
     // Only show if it's evening time AND user hasn't already rated today
@@ -1579,7 +1492,41 @@ async function renderWeeklyReportModal() {
         document.getElementById('weekly-report-content').innerHTML = `<p class="text-red-500 p-6">Could not load report. Please try again.</p>`;
     }
 }
-
+async function generateAIReportInsight(data) {
+    if (!data || (data.moodData.length === 0 && data.dayRatingData.length === 0)) {
+        document.getElementById('ai-report-loading')?.classList.add('hidden');
+        document.getElementById('ai-report-text').textContent = "Not enough data yet for AI insights. Keep tracking!";
+        document.getElementById('ai-report-text')?.classList.remove('hidden');
+        return;
+    }
+    const prompt = `
+        Generate a warm, insightful, and beautiful weekly mental health summary for a user.
+        Data:
+        - Moods: ${JSON.stringify(data.moodData.map(m => m.label))}
+        - Day Ratings (Avg): Productivity ${data.avgRatings.Productivity}/5, Social ${data.avgRatings.Social}/5.
+        - Steps (Google Fit): ${todaySteps} (today).
+        
+        Write a short, encouraging paragraph (approx 60 words) highlighting patterns and offering 1 actionable tip.
+    `;
+    
+    // Call generateReply logic or a simplified fetch here
+    // For brevity, using the existing generateReply structure concept:
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${gem.GEMINI_API_KEY}`;
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        });
+        const res = await response.json();
+        const text = res.candidates[0].content.parts[0].text;
+        
+        document.getElementById('ai-report-loading').classList.add('hidden');
+        const textEl = document.getElementById('ai-report-text');
+        textEl.innerHTML = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>'); // Simple bold formatting
+        textEl.classList.remove('hidden');
+    } catch (e) { console.error(e); }
+}
 function renderWeeklyReportContent(data) {
     const contentEl = document.getElementById('weekly-report-content');
     if (!contentEl) return;
@@ -1599,7 +1546,11 @@ function renderWeeklyReportContent(data) {
                 You tracked ${data.moodData.length} mood(s) and rated ${data.dayRatingData.length} day(s). Your average day rating was <span class="font-bold">${avgOverall} / 5</span>.
             </p>
         </div>
-
+<div class="report-section">
+        <h4 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">AI Weekly Analysis 🧠</h4>
+        <div id="ai-report-loading" class="animate-pulse h-20 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
+        <p id="ai-report-text" class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed hidden"></p>
+    </div>
         <!-- Mood Trend Chart -->
         <div class="report-section">
             <h4 class="text-lg font-semibold text-gray-800 dark:text-gray-900 mb-4">Weekly Mood Trend</h4>
@@ -1630,6 +1581,7 @@ function renderWeeklyReportContent(data) {
     if (data.dayRatingData.length > 0) {
         drawWeeklyActivityRadar(data.avgRatings, '#weekly-radar-chart');
     }
+    generateAIReportInsight(data); // <-- ADD THIS LINE
 }
 
 // Helper to format time (e.g., "14:30" -> "02:30 PM")
@@ -1855,6 +1807,7 @@ function renderProfileModal() {
 
                                 <!-- Stats -->
                                 <div class="grid grid-cols-3 gap-4">
+                                
                                     <div class="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-xl">
                                         <div class="text-2xl font-bold text-indigo-600 dark:text-indigo-400">${totalMoods}</div>
                                         <div class="text-sm text-gray-600 dark:text-gray-400">Moods Tracked</div>
@@ -1867,6 +1820,18 @@ function renderProfileModal() {
                                         <div class="text-2xl font-bold text-purple-600 dark:text-purple-400">${userBadges.length}</div>
                                         <div class="text-sm text-gray-600 dark:text-gray-400">Badges Earned</div>
                                     </div>
+                                  <!-- <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+        <h4 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">Integrations</h4>
+      <button id="connect-fit-btn" class="gfit-btn w-full py-3 rounded-xl flex items-center justify-center gap-3 font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+    <svg class="w-6 h-6" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M19.25 3.018H4.75C3.784 3.018 3 3.802 3 4.768v14.464c0 .966.784 1.75 1.75 1.75h14.5c.966 0 1.75-.784 1.75-1.75V4.768c0-.966-.784-1.75-1.75-1.75zM17.395 17.982H6.605l3.963-4.236 1.431 1.528 5.396-5.773L17.395 17.982z" fill="#EA4335"/>
+        <path d="M12 6.5l-2.766 2.957L12 12.207l2.766-2.75L12 6.5z" fill="#FBBC04"/>
+        <path d="M6.605 17.982l3.963-4.236 1.432 1.528-1.432 1.529-3.963 1.179z" fill="#4285F4"/>
+        <path d="M12.001 12.207L17.395 6.436v11.546l-5.394-5.775z" fill="#34A853"/>
+    </svg>
+    ${fitAccessToken ? 'Sync Google Fit Data' : 'Connect Google Fit'}
+</button>
+    </div>-->
                                 </div>
 
                                 <!-- Badges Section -->
@@ -3188,6 +3153,20 @@ const margin = { top: 60, right: 60, bottom: 60, left: 60 };    const radius = M
       .attr("cx", (d, i) => rScale(d.value) * Math.cos(angleSlice * i - Math.PI / 2))
       .attr("cy", (d, i) => rScale(d.value) * Math.sin(angleSlice * i - Math.PI / 2));
 }
+function showDistressPopup() {
+    const popupHTML = `
+        <div id="distress-popup" class="distress-popup fixed top-20 right-5 max-w-sm p-4 rounded-xl shadow-2xl z-[100] flex items-center gap-4 pointer-events-auto">
+            <div class="text-4xl">🫂</div>
+            <div>
+                <h4 class="font-bold text-gray-800 dark:text-gray-100">Don't feel sad.</h4>
+                <p class="text-sm text-gray-600 dark:text-gray-300">You are stronger than you think. We are here with you.</p>
+            </div>
+            <button onclick="this.parentElement.remove()" class="text-gray-400 hover:text-gray-600">&times;</button>
+        </div>
+    `;
+    featureContainer.insertAdjacentHTML('beforeend', popupHTML);
+    setTimeout(() => document.getElementById('distress-popup')?.remove(), 6000);
+}
 async function handleChatSend() {
     const inputEl = document.getElementById('chat-input');
     const sendBtn = document.getElementById('chat-send-btn');
@@ -3207,24 +3186,67 @@ async function handleChatSend() {
         const chatPath = `artifacts/${cons.appId}/chats/${user.uid}/messages`;
         await addDoc(collection(db, chatPath), { text, sender: "user", sentAt: serverTimestamp() });
 
-        const recentHistory = chatMessages.slice(-11, -1).map(m => ({
+        const recentHistory = chatMessages.slice(-6).map(m => ({
             role: m.sender === 'user' ? 'user' : 'model',
             parts: [{ text: m.text }]
         }));
 
-     const reply = await generateReply({ text, moodScore: todayMood?.score ?? 0, name: profile.displayName, chatHistory: recentHistory });
-
-        // Add bot message to Firestore ONCE
-        await addDoc(collection(db, chatPath), { text: reply.text, sender: "bot", sentAt: serverTimestamp() });
+        // 1. Get AI Response
+        const replyData = await generateReply({ text, moodScore: todayMood?.score ?? 0, name: profile.displayName, chatHistory: recentHistory });
         
-        // --- NEW: Auto TTS ---
-        if (isAutoTTS) {
-            speakText(reply.text);
+        // 2. Handle Dynamic Mood Change
+       // 2. Handle Dynamic Mood Change
+       // 2. Handle Dynamic Mood Change
+        if (replyData.mood) {
+            console.log("AI Detected Mood:", replyData.mood);
+            
+            // Map AI mood strings to your internal keys
+            let mappedMood = replyData.mood;
+            
+            // Verify the mood exists in your system
+            const moodInfo = cons.FEELING_WHEEL[mappedMood] || cons.MOODS.find(m => m.label === mappedMood);
+            
+            if (moodInfo) {
+                // Apply theme immediately for feedback
+                applyMoodTheme(mappedMood);
+                
+                // --- FIX: Save this mood to Firestore ---
+                // We only save if it's different from the current mood to avoid spamming writes
+                // But if they haven't tracked yet today, definitely save it.
+                if (!todayMood || todayMood.label !== mappedMood) {
+                    console.log("Auto-saving detected mood:", mappedMood);
+                    // We pass a generic sub-mood like "Chat Detected"
+                    // handleMoodPick handles the Firestore save and UI updates
+                    await handleMoodPick(mappedMood, "Chat Detected");
+                    
+                    showNotification(`Mood updated to ${mappedMood} based on chat`, false, true);
+                }
+                // ----------------------------------------
+            }
         }
-        // ---------------------
 
-        checkAndNotifyBadgeUpdate(); // Check for new badges after sending a message
-    } catch (error) {
+        // 3. Handle Distress/Crisis
+        if (replyData.isCrisis) {
+            distressTriggerCount++;
+            showDistressPopup(); // Show "Don't feel sad" popup
+            
+            if (distressTriggerCount >= 3) {
+                // Redirect to Counselor
+                setTimeout(() => {
+                    const counselorSection = document.querySelector('#counselor-section-anchor') || document.body.lastElementChild;
+                    counselorSection.scrollIntoView({ behavior: 'smooth' });
+                    showNotification("Connecting you to resources...", false, true);
+                }, 2000);
+            }
+        }
+
+        // 4. Save Bot Message
+        await addDoc(collection(db, chatPath), { text: replyData.text, sender: "bot", sentAt: serverTimestamp() });
+        
+        if (isAutoTTS) speakText(replyData.text);
+        checkAndNotifyBadgeUpdate();
+
+    }  catch (error) {
         console.error("Failed to send message:", error);
         chatMessages = chatMessages.filter(m => m.id !== tempUserMessageId);
         updateChatMessages(chatMessages, false, false);
@@ -3516,8 +3538,15 @@ function applyMoodTheme(moodLabel = "Neutral") {
     appBackground.dataset.moodTheme = theme;
 }
 function setupEventListeners() {
+    // Add inside appRoot click listener
+    
     appRoot.addEventListener('click', async (e) => {
+
         const target = e.target; // MOVE THIS LINE UP
+        // Google Fit Connect Button
+        if (target.closest('#connect-fit-btn')) {
+            connectGoogleFit();
+        }
 // TTS Toggle in Dropdown
         if (target.closest('#tts-toggle-btn')) {
             toggleAutoTTS();
@@ -4673,5 +4702,3 @@ main();
 
 // Call smart popups *after* main() has run and data (like todayDayRating) is fetched
 // We'll call this at the end of onAuthStateChanged instead
-
-
