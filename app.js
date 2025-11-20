@@ -1547,9 +1547,9 @@ function renderWeeklyReportContent(data) {
             </p>
         </div>
 <div class="report-section">
-        <h4 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">AI Weekly Analysis 🧠</h4>
+        <h4 class="text-lg font-semibold text-gray-800 dark:text-gray-800 mb-2">AI Weekly Analysis 🧠</h4>
         <div id="ai-report-loading" class="animate-pulse h-20 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
-        <p id="ai-report-text" class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed hidden"></p>
+        <p id="ai-report-text" class="text-gray-600 dark:text-gray-800 text-sm leading-relaxed hidden"></p>
     </div>
         <!-- Mood Trend Chart -->
         <div class="report-section">
@@ -3156,10 +3156,10 @@ const margin = { top: 60, right: 60, bottom: 60, left: 60 };    const radius = M
 function showDistressPopup() {
     const popupHTML = `
         <div id="distress-popup" class="distress-popup fixed top-20 right-5 max-w-sm p-4 rounded-xl shadow-2xl z-[100] flex items-center gap-4 pointer-events-auto">
-            <div class="text-4xl">🫂</div>
+            <div class="text-4xl">😢</div>
             <div>
-                <h4 class="font-bold text-gray-800 dark:text-gray-100">Don't feel sad.</h4>
-                <p class="text-sm text-gray-600 dark:text-gray-300">You are stronger than you think. We are here with you.</p>
+                <h4 class="font-bold text-gray-800 dark:text-gray-800">Don't feel sad.</h4>
+                <p class="text-sm text-gray-600 dark:text-gray-800">You are stronger than you think. We are here with you.</p>
             </div>
             <button onclick="this.parentElement.remove()" class="text-gray-400 hover:text-gray-600">&times;</button>
         </div>
