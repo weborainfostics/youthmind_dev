@@ -13,6 +13,41 @@
     position: relative;
     overflow: hidden;
 }
+/* ===== Distress Warning Popup ===== */
+.distress-popup {
+    background: rgba(255, 255, 255, 0.95);
+    border-left: 6px solid #ef4444; /* Red warning border */
+    animation: slideInRight 0.5s ease-out forwards;
+    box-shadow: 0 10px 30px rgba(239, 68, 68, 0.2);
+}
+.dark .distress-popup {
+    background: rgba(31, 41, 55, 0.95);
+}
+@keyframes slideInRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+/* ===== Google Fit Button ===== */
+.gfit-btn {
+    background: white;
+    color: #444;
+    border: 1px solid #ddd;
+    transition: all 0.2s ease;
+}
+.gfit-btn:hover {
+    background: #f8f9fa;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transform: translateY(-1px);
+}
+.dark .gfit-btn {
+    background: #374151;
+    color: #e5e7eb;
+    border-color: #4b5563;
+}
+.dark .gfit-btn:hover {
+    background: #4b5563;
+}
 /* ===== Chat Speaker Button ===== */
 .tts-btn {
     opacity: 0; /* Hidden by default */
