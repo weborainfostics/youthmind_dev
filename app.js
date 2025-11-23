@@ -62,6 +62,7 @@ if (speechSynthesis.onvoiceschanged !== undefined) {
 const appRoot = document.getElementById('app-root');
 const featureContainer = document.getElementById('app-root');
 let app, db, auth;
+let lastDistressAlertTime = 0; // <-- ADD THIS
 let user = null;
 let profile = null;
 let todayMood = null;
@@ -3283,28 +3284,27 @@ async function handleChatSend() {
             }
         }
 
-        // 3. Handle Distress & Safety (UPDATED LOGIC)
+       // 3. Handle Distress & Safety
         if (replyData.distressLevel < 4) {
-            // If the user is calm, LOWER the counter (so they don't get alerted later for no reason)
+            // If the user is calm, LOWER the counter
             if (distressTriggerCount > 0) distressTriggerCount--; 
         } 
         else if (replyData.distressLevel >= 4) {
-            // Only increment on distress
             distressTriggerCount++;
             
             let popupTitle = "Here for you.";
             let popupMsg = "You are not alone.";
             let popupEmoji = "💙";
-            let shouldConnect = false;
+            let shouldConnect = false; // Default to NO connection
 
-            // Check for EXTREME distress (Suicide/Self-Harm/Crisis)
+            // STRICT CRITERIA for Auto-Connection (Extreme Only)
             if (replyData.distressLevel >= 9 || ['SelfHarm', 'Crisis'].includes(replyData.distressType)) {
                 popupTitle = "Urgent Help Needed";
                 popupMsg = "We are connecting you to a professional right now. Please hold on.";
                 popupEmoji = "🆘";
-                shouldConnect = true;
+                shouldConnect = true; // ONLY set true here
             } 
-            // Check for Moderate Distress (Anxiety/Sadness)
+            // Moderate Distress (Just show local popup)
             else {
                 switch (replyData.distressType) {
                     case 'Anxiety':
@@ -3329,28 +3329,31 @@ async function handleChatSend() {
                 }
             }
 
-            // Show popup (only if we haven't just shown one, or if it's urgent)
-            showDistressPopup(popupTitle, popupMsg, popupEmoji);
-            
-            // TRIGGER AUTO-CONNECTION
-            // Connect if: Extreme Distress OR 3rd Strike
-            if (shouldConnect || distressTriggerCount >= 3) {
-                // Reset counter so it doesn't trigger immediately again on the very next message
+            // --- Cooldown Logic for Popups ---
+            const now = Date.now();
+            const timeSinceLastAlert = now - lastDistressAlertTime;
+            const COOLDOWN_MS = 5 * 60 * 1000; // 5 Minutes
+
+            // Always show if Urgent, otherwise respect cooldown
+            if (shouldConnect || timeSinceLastAlert > COOLDOWN_MS) {
+                showDistressPopup(popupTitle, popupMsg, popupEmoji);
+                lastDistressAlertTime = now;
+            }
+
+            // --- AUTO-CONNECTION (EXTREME CASES ONLY) ---
+            if (shouldConnect) {
+                // Reset counter
                 distressTriggerCount = 0; 
 
                 showNotification("Connecting you to a professional counselor...", false, true);
                 
                 setTimeout(() => {
-                    // Pick a random counselor
                     const randomCounselor = cons.COUNSELORS[Math.floor(Math.random() * cons.COUNSELORS.length)];
-                    
-                    // Construct message based on situation
-                    const userNote = shouldConnect ? "URGENT: I am feeling extremely distressed and need help." : "Hi, I've been feeling down and would like to chat.";
+                    const userNote = "URGENT: I am feeling extremely distressed and need help.";
                     const whatsappUrl = `https://wa.me/${randomCounselor.whatsapp}?text=${encodeURIComponent(userNote)}`;
                     
-                    // Open WhatsApp
                     window.open(whatsappUrl, '_blank');
-                }, 3000); // 3-second delay to let them read the popup
+                }, 3000);
             }
         }
 
@@ -4815,6 +4818,7 @@ main();
 
 // Call smart popups *after* main() has run and data (like todayDayRating) is fetched
 // We'll call this at the end of onAuthStateChanged instead
+
 
 
 
