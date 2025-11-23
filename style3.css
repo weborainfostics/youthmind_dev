@@ -1,6 +1,28 @@
 .modal-content {
     transition: all 0.3s ease-out;
 }
+/* ===== Dynamic Distress Popup ===== */
+.distress-popup {
+    background: rgba(255, 255, 255, 0.95);
+    border-left: 6px solid #ef4444; /* Red warning border */
+    backdrop-filter: blur(8px);
+    box-shadow: 0 10px 30px rgba(239, 68, 68, 0.2);
+    transition: all 0.3s ease;
+}
+.dark .distress-popup {
+    background: rgba(31, 41, 55, 0.95);
+    border-left-color: #f87171; /* Lighter red for dark mode */
+    box-shadow: 0 10px 30px rgba(248, 113, 113, 0.2);
+}
+
+.slide-in-right {
+    animation: slideInRight 0.5s ease-out forwards;
+}
+
+@keyframes slideInRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
 /* ===== Sleep Pop-up Banner ===== */
 .sleep-popup {
     animation: slideInUp 0.5s ease-out forwards, fadeOut 0.5s ease-in-out 14.5s forwards;
@@ -791,3 +813,4 @@
     stroke: #111827;
 }
 /* ===== Dark Mode Chart Fixes ===== */
+
