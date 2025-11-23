@@ -329,11 +329,13 @@ async function generateReply({ text, moodScore, name, chatHistory }) {
     ${moodHierarchy}
 
     Guidelines:
-    1. **Mood Detection:** ONLY return a mood if the user explicitly expresses an emotion (e.g., "I failed my test", "I'm so happy"). For greetings like "Hi", "Wassup", or casual questions, set "detected_mood": null.
-    2. **Sub-moods:** If the user says "I feel alone", mood="Sad", sub_mood="Lonely". If "I'm winning", mood="Happy", sub_mood="Optimistic".
-    3. **Distress:** - Level 0-3: Normal chat.
-       - Level 4-6: Mild distress (Anxiety, Sadness).
-       - Level 7+: High distress/Crisis.
+    1. **Mood Detection:** ONLY return a mood if the user explicitly expresses an emotion. For greetings like "Hi", set "detected_mood": null.
+    2. **Distress Scale (0-10):** - 0-3: Normal/Casual.
+       - 4-7: Mild/Moderate (Sad, Anxious, Lonely).
+       - 8-10: EXTREME (Suicidal thoughts, Self-harm, explicitly saying "I want to die", "I can't go on").
+    3. **Distress Type:** If level is 8-10, set distress_type to 'Crisis' or 'SelfHarm'.
+    4. **Response:** - If Level 8-10: Be very brief, validating, and urge professional help.
+       - If Level 0-7: Be your warm, chatty, Desi best friend.
     `;
 
     const payload = {
@@ -3259,85 +3261,100 @@ async function handleChatSend() {
        // ... (previous code inside handleChatSend remains the same until generateReply call) ...
 
         // 1. Get AI Response
+       // 1. Get AI Response
         const replyData = await generateReply({ text, moodScore: todayMood?.score ?? 0, name: profile.displayName, chatHistory: recentHistory });
         
         // 2. Handle Dynamic Mood Change
         if (replyData.mood) {
+            // ... (Keep your existing mood update logic here, it was fine) ...
             console.log(`AI Detected: ${replyData.mood} -> ${replyData.subMood}`);
-            
             const moodInfo = cons.FEELING_WHEEL[replyData.mood];
             
             if (moodInfo) {
-                // Apply theme
                 applyMoodTheme(replyData.mood);
-                
-                // --- SMART FILTER ---
-                // Only update if mood is different OR if we are refining it with a sub-mood
                 const currentMain = todayMood?.label;
                 const currentSub = todayMood?.subMood;
                 
-                // Don't overwrite a specific mood with a generic one unless it's a major shift
                 if (currentMain !== replyData.mood || (replyData.subMood && currentSub !== replyData.subMood)) {
-                    
-                    console.log("Saving mood update...");
-                    // Use the AI's detected sub-mood, or fallback to a default if missing
                     const subMoodToSave = replyData.subMood || "Chat Detected";
-                    
                     await handleMoodPick(replyData.mood, subMoodToSave);
-                    showNotification(`Mood updated: ${replyData.mood} (${subMoodToSave})`, false, true);
+                    showNotification(`Mood updated: ${replyData.mood}`, false, true);
                 }
             }
         }
 
-        // 3. Handle Specific Distress Alerts
-        if (replyData.distressLevel >= 4) { // Trigger on mild distress and above
+        // 3. Handle Distress & Safety (UPDATED LOGIC)
+        if (replyData.distressLevel < 4) {
+            // If the user is calm, LOWER the counter (so they don't get alerted later for no reason)
+            if (distressTriggerCount > 0) distressTriggerCount--; 
+        } 
+        else if (replyData.distressLevel >= 4) {
+            // Only increment on distress
             distressTriggerCount++;
             
             let popupTitle = "Here for you.";
             let popupMsg = "You are not alone.";
             let popupEmoji = "💙";
+            let shouldConnect = false;
 
-            switch (replyData.distressType) {
-                case 'Anxiety':
-                    popupTitle = "Breathe.";
-                    popupMsg = "Anxiety passes. Let's take it slow.";
-                    popupEmoji = "🌬️";
-                    break;
-                case 'Loneliness':
-                    popupTitle = "We are here.";
-                    popupMsg = "You are connected and valued.";
-                    popupEmoji = "🫂";
-                    break;
-                case 'Anger':
-                    popupTitle = "It's okay to vent.";
-                    popupMsg = "Take a moment. Let it out safely.";
-                    popupEmoji = "🔥";
-                    break;
-                case 'SelfHarm':
-                case 'Crisis':
-                    popupTitle = "Please stay safe.";
-                    popupMsg = "You matter. Help is available.";
-                    popupEmoji = "🆘";
-                    break;
-                default:
-                    popupTitle = "Don't feel sad.";
-                    popupMsg = "You are stronger than you think.";
-                    popupEmoji = "😢";
+            // Check for EXTREME distress (Suicide/Self-Harm/Crisis)
+            if (replyData.distressLevel >= 9 || ['SelfHarm', 'Crisis'].includes(replyData.distressType)) {
+                popupTitle = "Urgent Help Needed";
+                popupMsg = "We are connecting you to a professional right now. Please hold on.";
+                popupEmoji = "🆘";
+                shouldConnect = true;
+            } 
+            // Check for Moderate Distress (Anxiety/Sadness)
+            else {
+                switch (replyData.distressType) {
+                    case 'Anxiety':
+                        popupTitle = "Breathe.";
+                        popupMsg = "Anxiety passes. Let's take it slow.";
+                        popupEmoji = "🌬️";
+                        break;
+                    case 'Loneliness':
+                        popupTitle = "We are here.";
+                        popupMsg = "You are connected and valued.";
+                        popupEmoji = "🫂";
+                        break;
+                    case 'Anger':
+                        popupTitle = "It's okay to vent.";
+                        popupMsg = "Take a moment. Let it out safely.";
+                        popupEmoji = "🔥";
+                        break;
+                    default:
+                        popupTitle = "Don't feel sad.";
+                        popupMsg = "You are stronger than you think.";
+                        popupEmoji = "😢";
+                }
             }
 
+            // Show popup (only if we haven't just shown one, or if it's urgent)
             showDistressPopup(popupTitle, popupMsg, popupEmoji);
             
-            // Crisis Redirection (3 strikes rule)
-            if (distressTriggerCount >= 3 || replyData.distressLevel >= 8) {
+            // TRIGGER AUTO-CONNECTION
+            // Connect if: Extreme Distress OR 3rd Strike
+            if (shouldConnect || distressTriggerCount >= 3) {
+                // Reset counter so it doesn't trigger immediately again on the very next message
+                distressTriggerCount = 0; 
+
+                showNotification("Connecting you to a professional counselor...", false, true);
+                
                 setTimeout(() => {
-                    const counselorSection = document.querySelector('#counselor-section-anchor') || document.body.lastElementChild;
-                    counselorSection.scrollIntoView({ behavior: 'smooth' });
-                    showNotification("Connecting you to professional support resources...", false, true);
-                }, 2500);
+                    // Pick a random counselor
+                    const randomCounselor = cons.COUNSELORS[Math.floor(Math.random() * cons.COUNSELORS.length)];
+                    
+                    // Construct message based on situation
+                    const userNote = shouldConnect ? "URGENT: I am feeling extremely distressed and need help." : "Hi, I've been feeling down and would like to chat.";
+                    const whatsappUrl = `https://wa.me/${randomCounselor.whatsapp}?text=${encodeURIComponent(userNote)}`;
+                    
+                    // Open WhatsApp
+                    window.open(whatsappUrl, '_blank');
+                }, 3000); // 3-second delay to let them read the popup
             }
         }
 
-        // 4. Save Bot Message & Speak
+        // 4. Save Bot Message & Speak (Keep existing)
         await addDoc(collection(db, chatPath), { text: replyData.text, sender: "bot", sentAt: serverTimestamp() });
         if (isAutoTTS) speakText(replyData.text);
         checkAndNotifyBadgeUpdate();
@@ -4798,6 +4815,7 @@ main();
 
 // Call smart popups *after* main() has run and data (like todayDayRating) is fetched
 // We'll call this at the end of onAuthStateChanged instead
+
 
 
 
