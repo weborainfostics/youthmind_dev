@@ -299,6 +299,7 @@ async function fetchFitData() {
 }
 // ===== 3) Gemini API Logic =====
 // ===== 3) Gemini API Logic (Enhanced) =====
+// ===== 3) Gemini API Logic (Enhanced) =====
 async function generateReply({ text, moodScore, name, chatHistory }) {
     const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${gem.GEMINI_API_KEY}`;
     
@@ -306,30 +307,39 @@ async function generateReply({ text, moodScore, name, chatHistory }) {
         return { text: "API Key missing.", crisis: false };
     }
 
+    // Construct the mood hierarchy string for the prompt
+    const moodHierarchy = Object.entries(cons.FEELING_WHEEL).map(([main, data]) => 
+        `${main}: [${data.sub.join(', ')}]`
+    ).join('; ');
+
     const systemPrompt = `You are YouthMind, a smart, empathetic mental health companion.
     
-    CRITICAL INSTRUCTION: You must output ONLY valid JSON. Do not output plain text.
+    CRITICAL INSTRUCTION: You must output ONLY valid JSON.
     
     Analyze the user's message and return a JSON object with this structure:
     {
-      "reply": "Your conversational response here (keep it warm, Hinglish allowed, supportive)",
-      "detected_mood": "One of ['Very Sad', 'Sad', 'Neutral', 'Happy', 'Very Happy'] based on the user's tone",
-      "distress_level": Integer 0 to 10 (0 = calm, 10 = immediate self-harm/suicide risk),
-      "is_distress": Boolean (true if distress_level > 6)
+      "reply": "Your warm, supportive response here.",
+      "detected_mood": "Main mood from the list below, or null if neutral/casual.",
+      "detected_sub_mood": "Specific sub-mood from the list below, or null.",
+      "distress_level": Integer 0 to 10 (0=calm, 10=crisis),
+      "distress_type": "One of ['None', 'Anxiety', 'Loneliness', 'Anger', 'Sadness', 'Crisis', 'SelfHarm']"
     }
 
-    Context: User is ${name}.
-    
+    VALID MOOD HIERARCHY:
+    ${moodHierarchy}
+
     Guidelines:
-    1. If distress_level > 6: Be calm, grounding, and suggest professional help in the 'reply'.
-    2. If distress_level < 4: Be your usual fun, chatty, Desi best-friend self.
-    3. Detect mood deeply. If they say "I won the match", mood is "Very Happy". If "I failed", mood is "Sad".
+    1. **Mood Detection:** ONLY return a mood if the user explicitly expresses an emotion (e.g., "I failed my test", "I'm so happy"). For greetings like "Hi", "Wassup", or casual questions, set "detected_mood": null.
+    2. **Sub-moods:** If the user says "I feel alone", mood="Sad", sub_mood="Lonely". If "I'm winning", mood="Happy", sub_mood="Optimistic".
+    3. **Distress:** - Level 0-3: Normal chat.
+       - Level 4-6: Mild distress (Anxiety, Sadness).
+       - Level 7+: High distress/Crisis.
     `;
 
-  const payload = {
+    const payload = {
         contents: [...chatHistory, { role: 'user', parts: [{ text }] }],
         systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: { responseMimeType: "application/json" } // <--- CRITICAL
+        generationConfig: { responseMimeType: "application/json" } 
     };
 
     try {
@@ -341,21 +351,22 @@ async function generateReply({ text, moodScore, name, chatHistory }) {
         
         if (!response.ok) throw new Error("API Error");
         
-     const result = await response.json();
+        const result = await response.json();
         const jsonText = result.candidates[0].content.parts[0].text;
-        const aiResponse = JSON.parse(jsonText); // <--- CRITICAL
+        const aiResponse = JSON.parse(jsonText);
 
         return {
             text: aiResponse.reply,
-            mood: aiResponse.detected_mood, // This matches the system prompt structure
+            mood: aiResponse.detected_mood,
+            subMood: aiResponse.detected_sub_mood,
             distressLevel: aiResponse.distress_level,
-            isCrisis: aiResponse.is_distress
+            distressType: aiResponse.distress_type,
+            isCrisis: aiResponse.distress_level > 6
         };
 
     } catch (error) {
         console.error("AI Error:", error);
-        // Fallback for safety
-        return { text: "I'm having trouble connecting, but I'm here for you.", isCrisis: false };
+        return { text: "I'm listening, please go on...", isCrisis: false };
     }
 }
 // ===== NEW SLEEP RENDER FUNCTIONS =====
@@ -3196,18 +3207,28 @@ const margin = { top: 60, right: 60, bottom: 60, left: 60 };    const radius = M
       .attr("cx", (d, i) => rScale(d.value) * Math.cos(angleSlice * i - Math.PI / 2))
       .attr("cy", (d, i) => rScale(d.value) * Math.sin(angleSlice * i - Math.PI / 2));
 }
-function showDistressPopup() {
+function showDistressPopup(title = "Don't feel sad.", message = "We are here with you.", emoji = "😢") {
+    // Remove existing popup if any
+    document.getElementById('distress-popup')?.remove();
+
     const popupHTML = `
-        <div id="distress-popup" class="distress-popup fixed top-20 right-5 max-w-sm p-4 rounded-xl shadow-2xl z-[100] flex items-center gap-4 pointer-events-auto">
-            <div class="text-4xl">😢</div>
+        <div id="distress-popup" class="distress-popup fixed top-20 right-5 max-w-sm p-4 rounded-xl shadow-2xl z-[100] flex items-center gap-4 pointer-events-auto slide-in-right">
+            <div class="text-4xl">${emoji}</div>
             <div>
-                <h4 class="font-bold text-gray-800 dark:text-gray-800">Don't feel sad.</h4>
-                <p class="text-sm text-gray-600 dark:text-gray-800">You are stronger than you think. We are here with you.</p>
+                <h4 class="font-bold text-gray-800 dark:text-gray-800">${title}</h4>
+                <p class="text-sm text-gray-600 dark:text-gray-500">${message}</p>
             </div>
-            <button onclick="this.parentElement.remove()" class="text-gray-400 hover:text-gray-600">&times;</button>
+            <button id="close-distress-popup" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
         </div>
     `;
     featureContainer.insertAdjacentHTML('beforeend', popupHTML);
+    
+    // Add close listener immediately
+    document.getElementById('close-distress-popup').onclick = function() {
+        this.parentElement.remove();
+    };
+
+    // Auto remove after 6 seconds
     setTimeout(() => document.getElementById('distress-popup')?.remove(), 6000);
 }
 async function handleChatSend() {
@@ -3235,57 +3256,89 @@ async function handleChatSend() {
         }));
 
         // 1. Get AI Response
+       // ... (previous code inside handleChatSend remains the same until generateReply call) ...
+
+        // 1. Get AI Response
         const replyData = await generateReply({ text, moodScore: todayMood?.score ?? 0, name: profile.displayName, chatHistory: recentHistory });
         
         // 2. Handle Dynamic Mood Change
-       // 2. Handle Dynamic Mood Change
-       // 2. Handle Dynamic Mood Change
         if (replyData.mood) {
-            console.log("AI Detected Mood:", replyData.mood);
+            console.log(`AI Detected: ${replyData.mood} -> ${replyData.subMood}`);
             
-            // Map AI mood strings to your internal keys
-            let mappedMood = replyData.mood;
-            
-            // Verify the mood exists in your system
-            const moodInfo = cons.FEELING_WHEEL[mappedMood] || cons.MOODS.find(m => m.label === mappedMood);
+            const moodInfo = cons.FEELING_WHEEL[replyData.mood];
             
             if (moodInfo) {
-                // Apply theme immediately for feedback
-                applyMoodTheme(mappedMood);
+                // Apply theme
+                applyMoodTheme(replyData.mood);
                 
-                // --- FIX: Save this mood to Firestore ---
-                // We only save if it's different from the current mood to avoid spamming writes
-                // But if they haven't tracked yet today, definitely save it.
-                if (!todayMood || todayMood.label !== mappedMood) {
-                    console.log("Auto-saving detected mood:", mappedMood);
-                    // We pass a generic sub-mood like "Chat Detected"
-                    // handleMoodPick handles the Firestore save and UI updates
-                    await handleMoodPick(mappedMood, "Chat Detected");
+                // --- SMART FILTER ---
+                // Only update if mood is different OR if we are refining it with a sub-mood
+                const currentMain = todayMood?.label;
+                const currentSub = todayMood?.subMood;
+                
+                // Don't overwrite a specific mood with a generic one unless it's a major shift
+                if (currentMain !== replyData.mood || (replyData.subMood && currentSub !== replyData.subMood)) {
                     
-                    showNotification(`Mood updated to ${mappedMood} based on chat`, false, true);
+                    console.log("Saving mood update...");
+                    // Use the AI's detected sub-mood, or fallback to a default if missing
+                    const subMoodToSave = replyData.subMood || "Chat Detected";
+                    
+                    await handleMoodPick(replyData.mood, subMoodToSave);
+                    showNotification(`Mood updated: ${replyData.mood} (${subMoodToSave})`, false, true);
                 }
-                // ----------------------------------------
             }
         }
 
-        // 3. Handle Distress/Crisis
-        if (replyData.isCrisis) {
+        // 3. Handle Specific Distress Alerts
+        if (replyData.distressLevel >= 4) { // Trigger on mild distress and above
             distressTriggerCount++;
-            showDistressPopup(); // Show "Don't feel sad" popup
             
-            if (distressTriggerCount >= 3) {
-                // Redirect to Counselor
+            let popupTitle = "Here for you.";
+            let popupMsg = "You are not alone.";
+            let popupEmoji = "💙";
+
+            switch (replyData.distressType) {
+                case 'Anxiety':
+                    popupTitle = "Breathe.";
+                    popupMsg = "Anxiety passes. Let's take it slow.";
+                    popupEmoji = "🌬️";
+                    break;
+                case 'Loneliness':
+                    popupTitle = "We are here.";
+                    popupMsg = "You are connected and valued.";
+                    popupEmoji = "🫂";
+                    break;
+                case 'Anger':
+                    popupTitle = "It's okay to vent.";
+                    popupMsg = "Take a moment. Let it out safely.";
+                    popupEmoji = "🔥";
+                    break;
+                case 'SelfHarm':
+                case 'Crisis':
+                    popupTitle = "Please stay safe.";
+                    popupMsg = "You matter. Help is available.";
+                    popupEmoji = "🆘";
+                    break;
+                default:
+                    popupTitle = "Don't feel sad.";
+                    popupMsg = "You are stronger than you think.";
+                    popupEmoji = "😢";
+            }
+
+            showDistressPopup(popupTitle, popupMsg, popupEmoji);
+            
+            // Crisis Redirection (3 strikes rule)
+            if (distressTriggerCount >= 3 || replyData.distressLevel >= 8) {
                 setTimeout(() => {
                     const counselorSection = document.querySelector('#counselor-section-anchor') || document.body.lastElementChild;
                     counselorSection.scrollIntoView({ behavior: 'smooth' });
-                    showNotification("Connecting you to resources...", false, true);
-                }, 2000);
+                    showNotification("Connecting you to professional support resources...", false, true);
+                }, 2500);
             }
         }
 
-        // 4. Save Bot Message
+        // 4. Save Bot Message & Speak
         await addDoc(collection(db, chatPath), { text: replyData.text, sender: "bot", sentAt: serverTimestamp() });
-        
         if (isAutoTTS) speakText(replyData.text);
         checkAndNotifyBadgeUpdate();
 
@@ -4745,5 +4798,6 @@ main();
 
 // Call smart popups *after* main() has run and data (like todayDayRating) is fetched
 // We'll call this at the end of onAuthStateChanged instead
+
 
 
