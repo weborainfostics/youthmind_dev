@@ -1,15 +1,6 @@
 
-// REMOVE: import * as gem from "./api.js";
 import * as cons from "./const.js";
-
-// ADD: Functions SDK
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
-
-// ... keep auth and firestore imports ...
-
-// Initialize Functions
-// Ensure you added 'functions' to your firebaseConfig in const.js (or wherever it lives) if it wasn't auto-added, 
-// but usually getting the instance is enough:
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
     getAuth,
@@ -24,7 +15,7 @@ import {
     signInWithPopup,
     sendPasswordResetEmail,
     getAdditionalUserInfo,
-    sendEmailVerification // <-- ADD THIS
+    sendEmailVerification 
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import {
     getFirestore,
@@ -47,14 +38,14 @@ import {
     Timestamp
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 let isTourActive = false;
-let todayDayRating = null; // <-- ADD THIS
+let todayDayRating = null; 
 let currentTourStep = 0;
 let previousBadgeCount = 0; // For badge notifications
 let sleepChartData = [];
-let reminders = []; // <-- ADD THIS
-let reminderCheckInterval = null; // <-- ADD THIS
+let reminders = []; 
+let reminderCheckInterval = null; 
 let isDarkMode = false;
-let isAutoTTS = false; // <-- ADD THIS
+let isAutoTTS = false; 
 let synth = window.speechSynthesis;
 let voices = [];
 
@@ -78,9 +69,9 @@ let calendarMap = {};
 let chartData = [];
 let chatMessages = [];
 // ... existing variables ...
-let distressTriggerCount = 0; // <-- ADD THIS
-let fitAccessToken = null;   // <-- ADD THIS
-let todaySteps = 0;          // <-- ADD THIS
+let distressTriggerCount = 0; 
+let fitAccessToken = null;   
+let todaySteps = 0;
 let chatUnsubscribe = null;
 let todaySleep = null;
 let sleepCalendarMap = {};
@@ -95,9 +86,6 @@ let isListening = false;
 // Flexible track assignment system - easily customizable
 // Simply change the start and end numbers to assign different tracks to each mood
 // Example: "Very Sad": { start: 1, end: 20 } means tracks music1.mp3 to music20.mp3
-
-
-
 // Generate music categories based on track assignments
 const MUSIC_CATEGORIES = {};
 Object.keys(cons.MUSIC_TRACK_ASSIGNMENTS).forEach(mood => {
@@ -108,28 +96,12 @@ Object.keys(cons.MUSIC_TRACK_ASSIGNMENTS).forEach(mood => {
     }
     MUSIC_CATEGORIES[mood] = tracks;
 });
-
 const musicPlaylist = Array.from({ length: 20 }, (_, i) => `music${i + 1}.mp3`);
 let shuffledPlaylist = [];
 let currentTrackIndex = 0;
 let isShuffled = true;
 let currentMusicCategory = "Neutral"; // Default category
 const audio = new Audio();
-
-
-// User's Firebase Configuration
-
-
-
-
-// ===== 2) Helpers & Constants =====
-
-
-
-// ===== VIDEO GENRE LINKS SECTION =====
-// Add your video links here for each genre
-
-
 function titleCase(s) {
     if (!s) return "";
     return s.replace(/\w\S*/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
@@ -141,8 +113,6 @@ function dateId(d = new Date()) {
 function calculateSleepScore(hoursSlept, timesAwoke) {
     let hourScore = 0;
     let awokePenalty = 0;
-
-    // 1. Calculate score based on hours (Optimal 7-9 hours)
     if (hoursSlept >= 7 && hoursSlept <= 9) {
         hourScore = 100; // Perfect score
     } else if (hoursSlept > 9) {
@@ -155,22 +125,18 @@ function calculateSleepScore(hoursSlept, timesAwoke) {
         else if (hoursSlept >= 4) hourScore = 40;
         else hourScore = 20;
     }
-
     // 2. Calculate penalty for waking up (Optimal 0-1)
     if (timesAwoke > 1) {
         awokePenalty = (timesAwoke - 1) * 10;
     }
-
     // 3. Calculate final score
     const finalScore = Math.max(0, hourScore - awokePenalty); // Ensure score is not negative
-
     let emoji = "❓";
     if (finalScore >= 90) emoji = "✨"; // Excellent
     else if (finalScore >= 80) emoji = "😴"; // Good
     else if (finalScore >= 60) emoji = "👍"; // Fair
     else if (finalScore >= 40) emoji = "🥱"; // Poor
     else emoji = "😵"; // Very Poor
-
     return {
         score: finalScore,
         emoji: emoji,
@@ -179,10 +145,8 @@ function calculateSleepScore(hoursSlept, timesAwoke) {
 }
 function prepareTextForSpeech(text) {
     if (!text) return "";
-
     // 1. Remove Emojis (Ranges for most common emojis)
     let clean = text.replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, '');
-
     // 2. Convert Symbols to Pauses (Punctuation)
     // Replace asterisks (*) with commas for a short pause
     clean = clean.replace(/\*/g, ','); 
@@ -205,30 +169,25 @@ function speakText(text) {
 
     const textToRead = prepareTextForSpeech(text);
     const utterance = new SpeechSynthesisUtterance(textToRead);
-    
     // --- Improved Voice Selection ---
     // 1. Microsoft Voices (High quality on Windows)
     // 2. Google US English (High quality on Chrome/Android)
     // 3. Any "English (United States)"
     // 4. Any English
-    
     const preferredVoice = 
         voices.find(v => v.name.includes('Microsoft Zira')) || 
         voices.find(v => v.name.includes('Google US English')) || 
         voices.find(v => v.lang === 'en-US' && v.name.includes('Microsoft')) ||
         voices.find(v => v.lang === 'en-US') ||
         voices.find(v => v.lang.startsWith('en'));
-    
     if (preferredVoice) {
         utterance.voice = preferredVoice;
     }
-
     // Tuning for a calmer, more natural sound
     utterance.pitch = 0.95; 
     utterance.rate = 0.9; 
     utterance.volume = 1;
-
-    // ... (rest of animation logic) ...
+    // .. (rest of animation logic) ...
     synth.speak(utterance);
 }
 function toggleAutoTTS() {
@@ -247,16 +206,13 @@ async function connectGoogleFit() {
     const provider = new GoogleAuthProvider();
     provider.addScope('https://www.googleapis.com/auth/fitness.activity.read');
     provider.addScope('https://www.googleapis.com/auth/fitness.sleep.read');
-
     try {
         // If user is already signed in with Google, we can try re-authenticating
         // Or asking for permission via a popup that links the credential
         const result = await signInWithPopup(auth, provider);
-        
         // This gives you a Google Access Token. You can use it to access the Google API.
         const credential = GoogleAuthProvider.credentialFromResult(result);
         fitAccessToken = credential.accessToken;
-        
         showNotification("Google Fit Connected! Syncing data...", false, true);
         await fetchFitData();
     } catch (error) {
@@ -266,10 +222,8 @@ async function connectGoogleFit() {
 }
 async function fetchFitData() {
     if (!fitAccessToken) return;
-
     const endTime = new Date().getTime();
     const startTime = new Date().setHours(0,0,0,0); // Start of today
-
     // 1. Fetch Steps
     try {
         const response = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
@@ -293,8 +247,7 @@ async function fetchFitData() {
         // Update UI (if you want to show steps somewhere immediately)
         // You could add a small badge to the Profile or Health section
         
-    } catch (e) { console.error("Error fetching steps:", e); }
-
+    } catch (e) { console.error("Error fetching steps:", e); 
     // 2. Fetch Sleep (Simple implementation)
     // Note: Sleep sessions are complex in Fit API, this is a basic session read
     try {
@@ -318,14 +271,12 @@ async function generateReply({ text, moodScore, name, chatHistory }) {
 
     // 2. Call the Cloud Function (Secure)
     const generateAIResponse = httpsCallable(functions, 'generateAIResponse');
-
     try {
         const result = await generateAIResponse({
             text: text,
             chatHistory: chatHistory,
             moodHierarchy: moodHierarchy // Passing this ensures the prompt uses your exact hierarchy
         });
-
         // The Cloud Function returns the parsed JSON directly
         const aiResponse = result.data;
 
@@ -337,14 +288,12 @@ async function generateReply({ text, moodScore, name, chatHistory }) {
             distressType: aiResponse.distress_type,
             isCrisis: aiResponse.distress_level > 6
         };
-
     } catch (error) {
         console.error("Cloud Function Error:", error);
         // Fallback response if internet fails
         return { text: "I'm having trouble connecting to my brain right now. Please check your internet.", isCrisis: false };
     }
 }
-  
 function renderSleepPopupBanner() {
     const popupHTML = `
         <div id="sleep-popup-banner" class="sleep-popup fixed bottom-0 left-0 right-0 sm:bottom-20 sm:left-5 sm:right-auto sm:w-auto sm:max-w-md p-4 sm:rounded-lg shadow-2xl bg-white dark:bg-gray-800 border-t sm:border dark:border-gray-700 flex items-center justify-between pointer-events-auto z-50">
@@ -399,7 +348,6 @@ function renderSleepTrackingModal(existingData = null) {
                 </div>
             `)
 }
-
 function renderSleepScoreDisplay(scoreData) {
     const { score, emoji, color } = scoreData;
     // Map score (0-100) to rotation (-90deg to 90deg)
