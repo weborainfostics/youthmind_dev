@@ -1,1 +1,59 @@
+name: Deploy to GitHub Pages
 
+on:
+  push:
+    branches: ["main"] # Ensure this matches your default branch (main or master)
+  workflow_dispatch: # Allows you to manually trigger the deployment
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 🔍 Debug: List files to see structure in logs
+      - name: List files
+        run: ls -R
+
+      # 🔑 Security: Find api.js anywhere and inject the key
+      - name: Inject API Key
+        env:
+          # Load secret into an environment variable for safety
+          THE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # Use 'find' to locate api.js automatically, regardless of folder structure
+          # Use "s|...|...|g" delimiter in case key has special chars
+          find . -name "api.js" -exec sed -i "s|REPLACE_WITH_REAL_KEY|$THE_API_KEY|g" {} +
+          
+          # Verify (Safety Check) - Print if replacement happened (WITHOUT showing key)
+          if grep -q "REPLACE_WITH_REAL_KEY" $(find . -name "api.js"); then
+            echo "❌ Error: Placeholder was NOT replaced."
+            exit 1
+          else
+            echo "✅ Success: API Key injected."
+          fi
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.' 
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
