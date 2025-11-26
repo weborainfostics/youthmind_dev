@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main"] # or 'master', change to match your default branch
+    branches: ["main"] # Ensure this matches your default branch name (main or master)
 
 permissions:
   contents: read
@@ -23,20 +23,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # THIS STEP INJECTS THE SECRET
+      # 🔍 Debugging Step: This lists all files so you can see where api.js actually is
+      - name: List files for debugging
+        run: ls -R
+
+      # 🔑 Security Step: Swaps the placeholder with the real secret key
       - name: Inject API Key
         run: |
-          # Finds api.js and replaces the placeholder with the secret
-          sed -i 's/REPLACE_WITH_REAL_KEY/${{ secrets.GEMINI_API_KEY }}/g' weborainfostics/youthmind_dev/youthmind_dev-f34e62cc1b9912649347118a848856babb1ea7f9/api.js
-        # Make sure the path above matches exactly where api.js is in your repo structure!
-        
+          # We assume api.js is in the root folder. 
+          # If the "List files" step shows it's in a folder (e.g., 'src/api.js'), change './api.js' below.
+          sed -i 's/REPLACE_WITH_REAL_KEY/${{ secrets.GEMINI_API_KEY }}/g' ./api.js
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
-        
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.' # Uploads the entire repository as the site
+          path: '.' # Uploads the entire repository
 
       - name: Deploy to GitHub Pages
         id: deployment
