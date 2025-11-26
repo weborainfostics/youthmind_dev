@@ -1,0 +1,27 @@
+name: Deploy Website
+
+on:
+  push:
+    branches: [ main ] # Ensure this matches your branch name (main or master)
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # This step takes the Secret and puts it into api.js automatically
+      - name: Inject API Key
+        run: |
+           # This command finds the placeholder and replaces it with the real secret
+           sed -i 's|YOUR_API_KEY_HERE|${{ secrets.GEMINI_API_KEY }}|g' weborainfostics/youthmind_dev/youthmind_dev-main/api.js
+
+      # If you are using GitHub Pages to host
+      - name: Deploy to GitHub Pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: . # Deploys the entire repository
