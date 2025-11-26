@@ -1,6 +1,7 @@
 
 import * as cons from "./const.js";
-import * as gem from "./api.js";
+//import * as gem from "./api.js";
+import { GEMINI_API_KEY } from "./api.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
     getAuth,
@@ -4818,6 +4819,7 @@ main();
 
 // Call smart popups *after* main() has run and data (like todayDayRating) is fetched
 // We'll call this at the end of onAuthStateChanged instead
+
 
 
 
