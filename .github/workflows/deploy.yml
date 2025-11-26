@@ -2,7 +2,8 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main"] # Ensure this matches your default branch name (main or master)
+    branches: ["main"] # Ensure this matches your default branch (main or master)
+  workflow_dispatch: # Allows you to manually trigger the deployment
 
 permissions:
   contents: read
@@ -23,16 +24,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 🔍 Debugging Step: This lists all files so you can see where api.js actually is
-      - name: List files for debugging
+      # 🔍 Debug: List files to see structure in logs
+      - name: List files
         run: ls -R
 
-      # 🔑 Security Step: Swaps the placeholder with the real secret key
+      # 🔑 Security: Find api.js anywhere and inject the key
       - name: Inject API Key
+        env:
+          # Load secret into an environment variable for safety
+          THE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          # We assume api.js is in the root folder. 
-          # If the "List files" step shows it's in a folder (e.g., 'src/api.js'), change './api.js' below.
-          sed -i 's/REPLACE_WITH_REAL_KEY/${{ secrets.GEMINI_API_KEY }}/g' ./api.js
+          # Use 'find' to locate api.js automatically, regardless of folder structure
+          # Use "s|...|...|g" delimiter in case key has special chars
+          find . -name "api.js" -exec sed -i "s|REPLACE_WITH_REAL_KEY|$THE_API_KEY|g" {} +
+          
+          # Verify (Safety Check) - Print if replacement happened (WITHOUT showing key)
+          if grep -q "REPLACE_WITH_REAL_KEY" $(find . -name "api.js"); then
+            echo "❌ Error: Placeholder was NOT replaced."
+            exit 1
+          else
+            echo "✅ Success: API Key injected."
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -40,7 +52,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.' # Uploads the entire repository
+          path: '.' 
 
       - name: Deploy to GitHub Pages
         id: deployment
