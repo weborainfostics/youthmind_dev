@@ -1303,7 +1303,7 @@ function renderEveningCheckinBanner() {
     
     // Convert to minutes since midnight for easier comparison
     const currentTimeInMinutes = currentHour * 60 + currentMinutes;
-    const eveningStart = 0 * 60; // 6:00 PM = 1080 minutes
+    const eveningStart = 19 * 60; // 6:00 PM = 1080 minutes
     const eveningEnd = 23 * 60 + 59; // 11:59 PM = 1439 minutes
     
     // Only show if it's evening time AND user hasn't already rated today
@@ -4819,6 +4819,7 @@ main();
 
 // Call smart popups *after* main() has run and data (like todayDayRating) is fetched
 // We'll call this at the end of onAuthStateChanged instead
+
 
 
 
