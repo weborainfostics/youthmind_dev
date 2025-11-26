@@ -1,0 +1,43 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: ["main"] # or 'master', change to match your default branch
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # THIS STEP INJECTS THE SECRET
+      - name: Inject API Key
+        run: |
+          # Finds api.js and replaces the placeholder with the secret
+          sed -i 's/REPLACE_WITH_REAL_KEY/${{ secrets.GEMINI_API_KEY }}/g' weborainfostics/youthmind_dev/youthmind_dev-f34e62cc1b9912649347118a848856babb1ea7f9/api.js
+        # Make sure the path above matches exactly where api.js is in your repo structure!
+        
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+        
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.' # Uploads the entire repository as the site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
