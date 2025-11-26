@@ -3,9 +3,11 @@ const { defineSecret } = require("firebase-functions/params");
 const fetch = require("node-fetch");
 
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
-const GEMINI_MODEL = "gemini-2.0-flash"; // or 1.5-flash
 
-// Helper function to make the HTTP request to Gemini
+// FIX: Use the stable model. "2.5" does not exist publicly yet.
+const GEMINI_MODEL = "gemini-2.5-flash"; 
+
+// Helper to call Gemini
 async function callGemini(prompt, apiKey) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
     
@@ -19,14 +21,20 @@ async function callGemini(prompt, apiKey) {
     });
 
     if (!response.ok) {
+        const errText = await response.text();
+        console.error(`Gemini API Error: ${response.status}`, errText);
         throw new Error(`Gemini API Error: ${response.statusText}`);
     }
 
-    const result = await response.json();
+   const result = await response.json();
     try {
-        // Parse the inner JSON text string from Gemini
-        return JSON.parse(result.candidates[0].content.parts[0].text);
+        let rawText = result.candidates[0].content.parts[0].text;
+        // FIX: Clean markdown formatting (```json ... ```) before parsing to prevent crashes
+        rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(rawText);
     } catch (e) {
+        console.error("JSON Parse Error", e);
+        console.error("Raw Text:", result.candidates[0]?.content?.parts[0]?.text);
         throw new Error("Failed to parse AI response as JSON");
     }
 }
@@ -35,17 +43,15 @@ async function callGemini(prompt, apiKey) {
 // FUNCTION 1: Chat Response (The Brain)
 // ---------------------------------------------------------
 exports.generateAIResponse = onCall({ secrets: [GEMINI_API_KEY] }, async (request) => {
-    // 1. Security: Ensure user is logged in
     if (!request.auth) {
         throw new HttpsError("unauthenticated", "User must be logged in.");
     }
 
-    // 2. Get data passed from the frontend
     const { text, chatHistory, moodHierarchy } = request.data;
     const apiKey = GEMINI_API_KEY.value();
 
-    // 3. THE EXACT SYSTEM PROMPT YOU REQUESTED
-    const systemPrompt = `You are YouthMind, a smart, empathetic mental health companion, reply in user's tone and language.
+    // === YOUR EXACT REQUESTED PROMPT ===
+    const systemPrompt = `You are YouthMind, a smart, empathetic mental health companion.
     
     CRITICAL INSTRUCTION: You must output ONLY valid JSON.
     
@@ -69,6 +75,9 @@ exports.generateAIResponse = onCall({ secrets: [GEMINI_API_KEY] }, async (reques
     3. **Distress Type:** If level is 8-10, set distress_type to 'Crisis' or 'SelfHarm'.
     4. **Response:** - If Level 8-10: Be very brief, validating, and urge professional help.
        - If Level 0-7: Be your warm, chatty, Desi best friend.
+
+    Chat History: ${JSON.stringify(chatHistory)}
+    User Input: ${text}
     `;
 
     try {
@@ -80,7 +89,6 @@ exports.generateAIResponse = onCall({ secrets: [GEMINI_API_KEY] }, async (reques
     }
 });
 
-// ... (Keep your generateQuiz and generateWeeklyInsight functions as they were) ...
 // ---------------------------------------------------------
 // FUNCTION 2: Quiz Generation
 // ---------------------------------------------------------
@@ -93,7 +101,7 @@ exports.generateQuiz = onCall({ secrets: [GEMINI_API_KEY] }, async (request) => 
 
     try {
         const data = await callGemini(prompt, apiKey);
-        return data.quiz; // Return just the array
+        return data.quiz; 
     } catch (error) {
         throw new HttpsError("internal", "Failed to generate quiz.");
     }
