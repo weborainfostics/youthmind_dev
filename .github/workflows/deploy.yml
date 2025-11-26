@@ -15,11 +15,10 @@ jobs:
         uses: actions/checkout@v3
 
       # This step takes the Secret and puts it into api.js automatically
+     # This version finds api.js automatically, no matter where it is
       - name: Inject API Key
         run: |
-           # This command finds the placeholder and replaces it with the real secret
-           sed -i 's|YOUR_API_KEY_HERE|${{ secrets.GEMINI_API_KEY }}|g' weborainfostics/youthmind_dev/youthmind_dev-main/api.js
-
+          find . -name "api.js" -type f -exec sed -i 's|YOUR_API_KEY_HERE|${{ secrets.GEMINI_API_KEY }}|g' {} +
       # If you are using GitHub Pages to host
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
